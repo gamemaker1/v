@@ -1,5 +1,6 @@
 module cli
 
+type ArgResult = bool | int | []int | string | []string | float | []float
 type FnCommandCallback = fn (cmd Command) ?
 
 // str returns the `string` representation of the callback.
@@ -10,11 +11,12 @@ pub fn (f FnCommandCallback) str() string {
 // Command is a structured representation of a single command
 // or chain of commands.
 pub struct Command {
+pub:
+	name        string [required]
+	usage       string
+	description string
+	version     string
 pub mut:
-	name            string
-	usage           string
-	description     string
-	version         string
 	pre_execute     FnCommandCallback
 	execute         FnCommandCallback
 	post_execute    FnCommandCallback
