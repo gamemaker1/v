@@ -11,10 +11,13 @@ pub enum FlagType {
 	string_array
 }
 
+// Flag 还需要一个parse() method来跟generics产生关联
+// 最后command应该是：results['flag'] = flag.parse('contents')
+
 // Flag holds information for a command line flag.
 // (flags are also commonly referred to as "options" or "switches")
 // These are typically denoted in the shell by a short form `-f` and/or a long form `--flag`
-pub struct Flag {
+pub struct Flag<T> {
 pub mut:
 	flag FlagType
 	// Name of flag
