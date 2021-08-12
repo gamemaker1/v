@@ -1,6 +1,6 @@
 module cli
 
-type ArgResult = bool | int | []int | string | []string | float | []float
+type ArgResult = []float | []int | []string | bool | float | int | string
 type FnCommandCallback = fn (cmd Command) ?
 
 // str returns the `string` representation of the callback.
@@ -17,6 +17,7 @@ pub:
 	description string
 	version     string
 pub mut:
+	// Do checks here, such as verifying conflicting flags, 
 	pre_execute     FnCommandCallback
 	execute         FnCommandCallback
 	post_execute    FnCommandCallback
@@ -28,8 +29,10 @@ pub mut:
 	parent          &Command = 0
 	commands        []Command
 	flags           []Flag
-	required_args   int
+	// required_args   int
 	args            []string
+	results         []ArgResult
+	rest            []string
 }
 
 // str returns the `string` representation of the `Command`.
@@ -55,7 +58,7 @@ pub fn (cmd Command) str() string {
 	}
 	res << '	commands: $cmd.commands'
 	res << '	flags: $cmd.flags'
-	res << '	required_args: $cmd.required_args'
+	// res << '	required_args: $cmd.required_args'
 	res << '	args: $cmd.args'
 	res << '}'
 	return res.join('\n')
@@ -74,7 +77,7 @@ pub fn (cmd Command) root() Command {
 	return cmd.parent.root()
 }
 
-// full_name returns the full `string` representation of all commands int the chain.
+// full_name returns the full `string` representation of all commands in the chain.
 pub fn (cmd Command) full_name() string {
 	if cmd.is_root() {
 		return cmd.name

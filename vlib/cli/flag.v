@@ -1,16 +1,5 @@
 module cli
 
-pub enum FlagType {
-	bool
-	int
-	float
-	string
-	// If flag can set multiple time, use array type
-	int_array
-	float_array
-	string_array
-}
-
 // Flag 还需要一个parse() method来跟generics产生关联
 // 最后command应该是：results['flag'] = flag.parse('contents')
 
@@ -19,7 +8,6 @@ pub enum FlagType {
 // These are typically denoted in the shell by a short form `-f` and/or a long form `--flag`
 pub struct Flag<T> {
 pub mut:
-	flag FlagType
 	// Name of flag
 	name string
 	// Like short option
@@ -310,4 +298,8 @@ fn (flag Flag) get_value_or_default_value() []string {
 	} else {
 		return flag.value
 	}
+}
+
+pub fn (flag Flag<T>) parse(arg string) T {
+
 }
