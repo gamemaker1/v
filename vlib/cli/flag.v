@@ -9,14 +9,14 @@ module cli
 pub struct Flag<T> {
 pub mut:
 	// Name of flag
-	name string
+	name string [required]
 	// Like short option
 	abbrev string
 	// Desciption of flag
 	description string
 	global      bool
 	// If flag is requierd
-	required bool
+	required bool = false
 	// Default value if no value provide by command line
 	default_value []string = []
 mut:
@@ -300,6 +300,14 @@ fn (flag Flag) get_value_or_default_value() []string {
 	}
 }
 
-pub fn (flag Flag<T>) parse(arg string) T {
+// Verify that `Flag<T>` is using the allowed types (see `ArgResult`)
+pub fn (flag Flag<T>) verify() ? {
+	if !(T.name == 'int' || T.name == '[]int' || T.name == 'string' || T.name == '[]string'
+		|| T.name == 'bool' || T.name == 'float' || T.name == '[]float') {
+			return error('Type "${T.name}" is not allowed for `Flag`')
+	}
+}
+
+pub fn (flag Flag<T>) parse(arg string) ?T {
 
 }

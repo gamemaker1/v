@@ -214,3 +214,30 @@ fn test_default_value() {
 	value = flag.get_float() or { panic(err) }
 	assert value == 1.234
 }
+
+fn test_flag_type_check() {
+	bool_flag := cli.Flag<bool>{name: 'bool-test'}
+	bool_flag.verify() ?
+
+	int_flag := cli.Flag<int>{name: 'int-test'}
+	int_flag.verify() ?
+
+	list_int_flag := cli.Flag<[]string>{name: 'list-string-test'}
+	list_int_flag.verify() ?
+
+	string_flag := cli.Flag<string>{name: 'string-test'}
+	string_flag.verify() ?
+
+	list_string_flag := cli.Flag<[]string>{name: 'list-string-test'}
+	list_string_flag.verify() ?
+
+	float_flag := cli.Flag<float>{name: 'float-test'}
+	float_flag.verify() ?
+
+	list_float_flag := cli.Flag<[]float>{name: 'list-float-test'}
+	list_float_flag.verify() ?
+
+	// TODO: this should throw an error
+	u16_flag := cli.Flag<u16>{name: 'u16-test'}
+	list_float_flag.verify() ?
+}

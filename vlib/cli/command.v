@@ -35,6 +35,7 @@ pub mut:
 	rest            []string
 }
 
+// TODO: implement new fields
 // str returns the `string` representation of the `Command`.
 pub fn (cmd Command) str() string {
 	mut res := []string{}
@@ -106,6 +107,9 @@ pub fn (mut cmd Command) add_command(command Command) {
 // setup ensures that all sub-commands of this `Command`
 // is linked as a chain.
 pub fn (mut cmd Command) setup() {
+	for flag in cmd.flags {
+		
+	}
 	for mut subcmd in cmd.commands {
 		subcmd.parent = unsafe { cmd }
 		subcmd.setup()
@@ -307,4 +311,16 @@ fn (cmds []Command) contains(name string) bool {
 		}
 	}
 	return false
+}
+
+pub fn (mut cmd Command) run() ? {
+	// Check all flags under the command to make sure that they are using the
+	// allowed types (see `ArgResult`).
+	// For performance reasons, type checking is automatically disabled when 
+	// running in production mode (i.e. --prod).
+	$if !prod {
+		for flag in cmd.flags {
+			flag.verify() ?
+		}
+	}
 }
