@@ -215,7 +215,7 @@ fn test_default_value() {
 	assert value == 1.234
 }
 
-fn test_flag_type_check() {
+fn test_flag_type_check() ? {
 	bool_flag := cli.Flag<bool>{name: 'bool-test'}
 	bool_flag.verify() ?
 
@@ -239,5 +239,7 @@ fn test_flag_type_check() {
 
 	// TODO: this should throw an error
 	u16_flag := cli.Flag<u16>{name: 'u16-test'}
-	list_float_flag.verify() ?
+	if _ := u16_flag.verify() {
+		return error('Flag with type `u16` should throw an error!')
+	}
 }
