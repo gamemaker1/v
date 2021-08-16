@@ -305,7 +305,7 @@ mut:
 pub fn (flag Flag<T>) verify() ? {
 	if !(T.name == 'int' || T.name == '[]int' || T.name == 'string' || T.name == '[]string'
 		|| T.name == 'bool' || T.name == 'f64' || T.name == '[]f64') {
-			return error('Type "${T.name}" is not allowed for `Flag`')
+		return error('Type "$T.name" is not allowed for `Flag`')
 	}
 }
 
@@ -319,14 +319,33 @@ pub fn (flag Flag<T>) parse(f string, arg string) ?T {
 		} else if flag.negatble && f == '--no-' + flag.name {
 			return false
 		} else {
-			return error('Unrecognized flag "${f}"')
+			return error('Unrecognized flag "$f"')
 		}
-	} $else $if T is array {
+	} $else $if T is []int {
 		// The flag type is an array of some type ([]int, []string, or []float)
-		mut values := []T{}
+		mut values := []int{}
 
 		for value in arg.split(',') {
-			values << convert<T>(value) ?
+			values << convert<int>(value) ?
+		}
+
+		return values
+	} $else $if T is []f64 {
+		// I know it's wierd, but I actually can't put these into one $if 
+		// statement. The V compiler will get confused with the return type...
+		// As of 08/16/2021. Perhaps in the future, this will be resolved.
+		mut values := []f64{}
+
+		for value in arg.split(',') {
+			values << convert<f64>(value) ?
+		}
+
+		return values
+	} $else $if T is []string {
+		mut values := []string{}
+
+		for value in arg.split(',') {
+			values << convert<string>(value) ?
 		}
 
 		return values
@@ -334,22 +353,22 @@ pub fn (flag Flag<T>) parse(f string, arg string) ?T {
 		return convert<T>(arg)
 	}
 
-	// This line of code should technically never be reached. Everything is 
+	// This line of code should technically never be reached. Everything is
 	// handeled above.
 	// It's here just so that the program can compile.
-	return error('Unable to parse flag "${f}" with value "${arg}"!')
+	return error('Unable to parse flag "$f" with value "$arg"!')
 }
 
 fn convert<T>(input string) ?T {
-    $if T is int {
-        return input.int()
-    } $else $if T is f64 {
-        return input.f64()
-    } $else $if T is string {
-        return input
-    } $else {
+	$if T is int {
+		return input.int()
+	} $else $if T is f64 {
+		return input.f64()
+	} $else $if T is string {
+		return input
+	} $else {
 		// This should technically never happen because we already called
 		// verify() at the start of parse().
-        return error('Can\'t parse "${input}" from type "${T.name}"')
-    }
+		return error('Can\'t parse "$input" from type "$T.name"')
+	}
 }

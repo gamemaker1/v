@@ -215,6 +215,10 @@ module cli2
 // 	assert value == 1.234
 // }
 
+/*
+Test for `Flag<T>`'s self type-checking
+*/
+
 fn test_flag_type_check() ? {
 	bool_flag := Flag<bool>{
 		name: 'bool-test'
@@ -259,6 +263,10 @@ fn test_flag_type_check() ? {
 	}
 }
 
+/*
+Test for string to other types conversion, used inside `Flag<T>`
+*/
+
 fn test_value_conversion() ? {
 	assert convert<int>('32') ? == 32
 	assert convert<f64>('3.245') ? == 3.245
@@ -267,6 +275,10 @@ fn test_value_conversion() ? {
 		return error('Attempting to convert `u16` should throw an error!')
 	}
 }
+
+/*
+Tests for internal parsing inside `Flag<T>`
+*/
 
 fn test_if_bool_flag_parses() ? {
 	flag := Flag<bool>{
@@ -287,4 +299,63 @@ fn test_if_int_flag_parses() ? {
 	}
 	assert flag.parse('--int', '3') ? == 3
 	assert flag.parse('-i', '3') ? == 3
+}
+
+fn test_if_float_flag_parses() ? {
+	flag := Flag<f64>{
+		name: 'float'
+		abbrev: 'f'
+	}
+	assert flag.parse('--float', '3.648') ? == 3.648
+	assert flag.parse('-f', '3.648') ? == 3.648
+}
+
+fn test_if_string_flag_parses() ? {
+	flag := Flag<string>{
+		name: 'string'
+		abbrev: 's'
+	}
+	assert flag.parse('--string', 'hello') ? == 'hello'
+	assert flag.parse('-s', 'hi') ? == 'hi'
+}
+
+fn int_array_test() ? {
+	flag := Flag<[]int>{
+		name: 'int'
+		abbrev: 's'
+	}
+	assert flag.parse('--int', '1,23,4,560,-1') ? == [1, 23, 4, 560, -1]
+	assert flag.parse('-i', '1,23,4,560') ? == [1, 23, 4, 560]
+}
+
+fn float_array_test() ? {
+	flag := Flag<[]f64>{
+		name: 'float'
+		abbrev: 'f'
+	}
+	assert flag.parse('--float', '1.2,3.45,6, -0.25') ? == [1.2, 3.45, 6, -0.25]
+	assert flag.parse('-f', '1.2,3.45,6,-0.25') ? == [1.2, 3.45, 6, -0.25]
+}
+
+fn string_array_test() ? {
+	flag := Flag<[]string>{
+		name: 'string'
+		abbrev: 's'
+	}
+	assert flag.parse('--string', 'linux,windows,darwin,android') ? == ['linux', 'windows', 'darwin', 'android']
+	assert flag.parse('-s', 'linux,windows,darwin,android') ? == ['linux', 'windows', 'darwin', 'android']
+}
+
+fn test_if_array_parses() ? {
+	int_array_test() ?
+	float_array_test() ?
+	string_array_test() ?
+
+	flag := Flag<[]u16>{
+		name: 'usixteen'
+		abbrev: 'u'
+	}
+	if x := flag.parse('--usixteen', '16') {
+		return error('[]u16 flag shouldn\'t be parsed!')
+	}
 }
