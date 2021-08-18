@@ -53,6 +53,7 @@ pub mut:
 	nr_errors        int
 	nr_warnings      int
 	nr_notices       int
+	should_abort     bool // when too many errors/warnings/notices are accumulated, .should_abort becomes true. It is checked in statement/expression loops, so the checker can return early, instead of wasting time.
 	errors           []errors.Error
 	warnings         []errors.Warning
 	notices          []errors.Notice
@@ -139,17 +140,26 @@ pub fn (mut c Checker) check(ast_file &ast.File) {
 			c.expr_level = 0
 			c.stmt(stmt)
 		}
+		if c.should_abort {
+			return
+		}
 	}
 	for mut stmt in ast_file.stmts {
 		if stmt is ast.GlobalDecl {
 			c.expr_level = 0
 			c.stmt(stmt)
 		}
+		if c.should_abort {
+			return
+		}
 	}
 	for mut stmt in ast_file.stmts {
 		if stmt !is ast.ConstDecl && stmt !is ast.GlobalDecl && stmt !is ast.ExprStmt {
 			c.expr_level = 0
 			c.stmt(stmt)
+		}
+		if c.should_abort {
+			return
 		}
 	}
 	c.check_scope_vars(c.file.scope)
@@ -960,7 +970,7 @@ pub fn (mut c Checker) struct_init(mut node ast.StructInit) ast.Type {
 	unwrapped_struct_type := c.unwrap_generic_type(node.typ, c.table.cur_fn.generic_names,
 		c.table.cur_concrete_types)
 	c.ensure_type_exists(unwrapped_struct_type, node.pos) or {}
-	type_sym := c.table.get_type_symbol(unwrapped_struct_type)
+	type_sym := c.table.get_type_symbol(node.typ)
 	if !c.inside_unsafe && type_sym.kind == .sum_type {
 		c.note('direct sum type init (`x := SumType{}`) will be removed soon', node.pos)
 	}
@@ -1091,7 +1101,7 @@ pub fn (mut c Checker) struct_init(mut node ast.StructInit) ast.Type {
 				if is_embed {
 					expected_type = embed_type
 					c.expected_type = expected_type
-					expr_type = c.unwrap_generic(c.expr(field.expr))
+					expr_type = c.expr(field.expr)
 					expr_type_sym := c.table.get_type_symbol(expr_type)
 					if expr_type != ast.void_type && expr_type_sym.kind != .placeholder {
 						c.check_expected(expr_type, embed_type) or {
@@ -1106,7 +1116,7 @@ pub fn (mut c Checker) struct_init(mut node ast.StructInit) ast.Type {
 					field_type_sym := c.table.get_type_symbol(field_info.typ)
 					expected_type = field_info.typ
 					c.expected_type = expected_type
-					expr_type = c.unwrap_generic(c.expr(field.expr))
+					expr_type = c.expr(field.expr)
 					if !field_info.typ.has_flag(.optional) {
 						expr_type = c.check_expr_opt_call(field.expr, expr_type)
 					}
@@ -1175,8 +1185,8 @@ pub fn (mut c Checker) struct_init(mut node ast.StructInit) ast.Type {
 				// Do not allow empty uninitialized interfaces
 				sym := c.table.get_type_symbol(field.typ)
 				if sym.kind == .interface_ {
-					// TODO error
-					c.warn('interface field `${type_sym.name}.$field.name` must be initialized',
+					// TODO: should be an error instead, but first `ui` needs updating.
+					c.note('interface field `${type_sym.name}.$field.name` must be initialized',
 						node.pos)
 				}
 				// Do not allow empty uninitialized sum types
@@ -1228,7 +1238,7 @@ pub fn (mut c Checker) struct_init(mut node ast.StructInit) ast.Type {
 			c.error('expression is not an lvalue', node.update_expr.position())
 		}
 	}
-	return unwrapped_struct_type
+	return node.typ
 }
 
 fn (mut c Checker) check_div_mod_by_zero(expr ast.Expr, op_kind token.Kind) {
@@ -2081,8 +2091,13 @@ pub fn (mut c Checker) method_call(mut call_expr ast.CallExpr) ast.Type {
 		c.error('optional type cannot be called directly', call_expr.left.position())
 		return ast.void_type
 	}
-	if left_type_sym.kind in [.sum_type, .interface_] && method_name == 'type_name' {
-		return ast.string_type
+	if left_type_sym.kind in [.sum_type, .interface_] {
+		if method_name == 'type_name' {
+			return ast.string_type
+		}
+		if method_name == 'type_idx' {
+			return ast.int_type
+		}
 	}
 	if left_type == ast.void_type {
 		c.error('`void` type has no methods', call_expr.left.position())
@@ -2737,7 +2752,7 @@ pub fn (mut c Checker) fn_call(mut call_expr ast.CallExpr) ast.Type {
 	}
 	call_expr.is_noreturn = func.is_noreturn
 	if !found_in_args {
-		if _ := call_expr.scope.find_var(fn_name) {
+		if call_expr.scope.known_var(fn_name) {
 			c.error('ambiguous call to: `$fn_name`, may refer to fn `$fn_name` or variable `$fn_name`',
 				call_expr.pos)
 		}
@@ -3365,19 +3380,30 @@ pub fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 		else {}
 	}
 	if name_type > 0 {
-		if node.field_name != 'name' {
-			c.error('invalid field `.$node.field_name` for type `$node.expr`', node.pos)
-		}
 		node.name_type = name_type
-		return ast.string_type
+		match node.gkind_field {
+			.name {
+				return ast.string_type
+			}
+			.typ {
+				return ast.int_type
+			}
+			else {
+				if node.field_name == 'name' {
+					return ast.string_type
+				} else if node.field_name == 'idx' {
+					return ast.int_type
+				}
+				c.error('invalid field `.$node.field_name` for type `$node.expr`', node.pos)
+				return ast.string_type
+			}
+		}
 	}
 
-	//
 	old_selector_expr := c.inside_selector_expr
 	c.inside_selector_expr = true
 	typ := c.expr(node.expr)
 	c.inside_selector_expr = old_selector_expr
-	//
 	c.using_new_err_struct = using_new_err_struct_save
 	if typ == ast.void_type_idx {
 		c.error('`void` type has no fields', node.pos)
@@ -3390,8 +3416,7 @@ pub fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 			node.pos)
 	}
 	field_name := node.field_name
-	utyp := c.unwrap_generic(typ)
-	sym := c.table.get_type_symbol(utyp)
+	sym := c.table.get_type_symbol(typ)
 	if (typ.has_flag(.variadic) || sym.kind == .array_fixed) && field_name == 'len' {
 		node.typ = ast.int_type
 		return ast.int_type
@@ -3447,7 +3472,7 @@ pub fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 			}
 		}
 		if typ.has_flag(.generic) && !has_field {
-			gs := c.table.get_type_symbol(typ)
+			gs := c.table.get_type_symbol(c.unwrap_generic(typ))
 			if f := c.table.find_field(gs, field_name) {
 				has_field = true
 				field = f
@@ -3473,9 +3498,7 @@ pub fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 		field_sym := c.table.get_type_symbol(field.typ)
 		if field_sym.kind in [.sum_type, .interface_] {
 			if !prevent_sum_type_unwrapping_once {
-				if scope_field := node.scope.find_struct_field(node.expr.str(), utyp,
-					field_name)
-				{
+				if scope_field := node.scope.find_struct_field(node.expr.str(), typ, field_name) {
 					return scope_field.smartcasts.last()
 				}
 			}
@@ -4183,7 +4206,7 @@ pub fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 		}
 		if !is_blank_ident && !left.is_auto_deref_var() && !right.is_auto_deref_var()
 			&& right_sym.kind != .placeholder && left_sym.kind != .interface_
-			&& !right_type_unwrapped.has_flag(.generic) && !left_type_unwrapped.has_flag(.generic) {
+			&& !right_type.has_flag(.generic) && !left_type.has_flag(.generic) {
 			// Dual sides check (compatibility check)
 			c.check_expected(right_type_unwrapped, left_type_unwrapped) or {
 				// allow for ptr += 2
@@ -5210,14 +5233,7 @@ pub fn (mut c Checker) expr(node ast.Expr) ast.Type {
 			return node.typ
 		}
 		ast.AnonFn {
-			c.inside_anon_fn = true
-			keep_fn := c.table.cur_fn
-			c.table.cur_fn = unsafe { &node.decl }
-			c.stmts(node.decl.stmts)
-			c.fn_decl(mut node.decl)
-			c.table.cur_fn = keep_fn
-			c.inside_anon_fn = false
-			return node.typ
+			return c.anon_fn(mut node)
 		}
 		ast.ArrayDecompose {
 			typ := c.expr(node.expr)
@@ -5244,6 +5260,8 @@ pub fn (mut c Checker) expr(node ast.Expr) ast.Type {
 				if !c.table.sumtype_has_variant(node.expr_type, node.typ) {
 					c.error('cannot cast `$expr_type_sym.name` to `$type_sym.name`', node.pos)
 				}
+			} else if expr_type_sym.kind == .interface_ && type_sym.kind == .interface_ {
+				c.ensure_type_exists(node.typ, node.pos) or {}
 			} else if node.expr_type != node.typ {
 				mut s := 'cannot cast non-sum type `$expr_type_sym.name` using `as`'
 				if type_sym.kind == .sum_type {
@@ -6553,9 +6571,14 @@ fn (mut c Checker) smartcast_if_conds(node ast.Expr, mut scope ast.Scope) {
 			right_type = c.unwrap_generic(right_type)
 			if right_type != ast.Type(0) {
 				left_sym := c.table.get_type_symbol(node.left_type)
+				right_sym := c.table.get_type_symbol(right_type)
 				expr_type := c.unwrap_generic(c.expr(node.left))
 				if left_sym.kind == .interface_ {
-					c.type_implements(right_type, expr_type, node.pos)
+					if right_sym.kind != .interface_ {
+						c.type_implements(right_type, expr_type, node.pos)
+					} else {
+						return
+					}
 				} else if !c.check_types(right_type, expr_type) {
 					expect_str := c.table.type_to_str(right_type)
 					expr_str := c.table.type_to_str(expr_type)
@@ -7117,6 +7140,13 @@ pub fn (mut c Checker) prefix_expr(mut node ast.PrefixExpr) ast.Type {
 	right_type := c.expr(node.right)
 	c.inside_ref_lit = old_inside_ref_lit
 	node.right_type = right_type
+	if node.op == .amp {
+		if mut node.right is ast.PrefixExpr {
+			if node.right.op == .amp {
+				c.error('unexpected `&`, expecting expression', node.right.pos)
+			}
+		}
+	}
 	// TODO: testing ref/deref strategy
 	if node.op == .amp && !right_type.is_ptr() {
 		mut expr := node.right
@@ -7580,6 +7610,10 @@ fn (c &Checker) check_struct_signature(from ast.Struct, to ast.Struct) bool {
 }
 
 pub fn (mut c Checker) note(message string, pos token.Position) {
+	if c.pref.message_limit >= 0 && c.nr_notices >= c.pref.message_limit {
+		c.should_abort = true
+		return
+	}
 	mut details := ''
 	if c.error_details.len > 0 {
 		details = c.error_details.join('\n')
@@ -7609,6 +7643,10 @@ fn (mut c Checker) warn_or_error(message string, pos token.Position, warn bool) 
 	}
 	if warn && !c.pref.skip_warnings {
 		c.nr_warnings++
+		if c.pref.message_limit >= 0 && c.nr_warnings >= c.pref.message_limit {
+			c.should_abort = true
+			return
+		}
 		wrn := errors.Warning{
 			reporter: errors.Reporter.checker
 			pos: pos
@@ -7625,6 +7663,10 @@ fn (mut c Checker) warn_or_error(message string, pos token.Position, warn bool) 
 			exit(1)
 		}
 		c.nr_errors++
+		if c.pref.message_limit >= 0 && c.errors.len >= c.pref.message_limit {
+			c.should_abort = true
+			return
+		}
 		if pos.line_nr !in c.error_lines {
 			err := errors.Error{
 				reporter: errors.Reporter.checker
@@ -8001,6 +8043,8 @@ fn (mut c Checker) fn_decl(mut node ast.FnDecl) {
 			c.error('method overrides built-in array method', node.pos)
 		} else if sym.kind == .sum_type && node.name == 'type_name' {
 			c.error('method overrides built-in sum type method', node.pos)
+		} else if sym.kind == .sum_type && node.name == 'type_idx' {
+			c.error('method overrides built-in sum type method', node.pos)
 		} else if sym.kind == .multi_return {
 			c.error('cannot define method on multi-value', node.method_type_pos)
 		}
@@ -8158,6 +8202,30 @@ fn (mut c Checker) fn_decl(mut node ast.FnDecl) {
 		}
 	}
 	node.source_file = c.file
+}
+
+fn (mut c Checker) anon_fn(mut node ast.AnonFn) ast.Type {
+	keep_fn := c.table.cur_fn
+	keep_inside_anon := c.inside_anon_fn
+	defer {
+		c.table.cur_fn = keep_fn
+		c.inside_anon_fn = keep_inside_anon
+	}
+	c.table.cur_fn = unsafe { &node.decl }
+	c.inside_anon_fn = true
+	for mut var in node.inherited_vars {
+		parent_var := node.decl.scope.parent.find_var(var.name) or {
+			panic('unexpected checker error: cannot find parent of inherited variable `$var.name`')
+		}
+		if var.is_mut && !parent_var.is_mut {
+			c.error('original `$parent_var.name` is immutable, declare it with `mut` to make it mutable',
+				var.pos)
+		}
+		var.typ = parent_var.typ
+	}
+	c.stmts(node.decl.stmts)
+	c.fn_decl(mut node.decl)
+	return node.typ
 }
 
 // NB: has_top_return/1 should be called on *already checked* stmts,
