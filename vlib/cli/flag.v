@@ -16,7 +16,7 @@ pub mut:
 	description string
 	// Whether this flag's value can be set to false. This will only work for
 	// Flag<bool> and is ignored for all other types of Flag.
-	negatble bool
+	negatable bool
 	global   bool
 	// If flag is requierd
 	required bool = false
@@ -318,7 +318,7 @@ pub fn (flag Flag<T>) parse(f string, arg string) ?T {
 		// The flag is a bool flag
 		if f == '--' + flag.name || f == '-' + flag.abbrev {
 			return true
-		} else if flag.negatble && f == '--no-' + flag.name {
+		} else if flag.negatable && f == '--no-' + flag.name {
 			return false
 		} else {
 			return error('Unrecognized flag "$f"')
