@@ -52,6 +52,7 @@ pub fn (cmd Command) str() string {
 	res << '	disable_version: $cmd.disable_version'
 	res << '	sort_flags: $cmd.sort_flags'
 	res << '	sort_commands: $cmd.sort_commands'
+	res << '	use_front_args: $cmd.use_front_args'
 	res << '	cb execute: $cmd.execute'
 	res << '	cb pre_execute: $cmd.pre_execute'
 	res << '	cb post_execute: $cmd.post_execute'
