@@ -1,6 +1,6 @@
 module cli
 
-type ArgResult = []float | []int | []string | bool | float | int | string
+type ArgResult = []f64 | []int | []string | bool | f64 | int | string
 type FnCommandCallback = fn (cmd Command) ?
 
 // str returns the `string` representation of the callback.
@@ -17,7 +17,7 @@ pub:
 	description string
 	version     string
 pub mut:
-	// Do checks here, such as verifying conflicting flags, 
+	// Do checks here, such as verifying conflicting flags,
 	pre_execute     FnCommandCallback
 	execute         FnCommandCallback
 	post_execute    FnCommandCallback
@@ -26,12 +26,15 @@ pub mut:
 	disable_flags   bool
 	sort_flags      bool
 	sort_commands   bool
+	// The command will use the arguments **IN FRONT OF** the command.
+	// Everything after it will be passed into `rest`.
+	// This has no effect on the root command.
+	use_front_args  bool
 	parent          &Command = 0
 	commands        []Command
 	flags           []Flag
-	// required_args   int
-	args            []string
-	results         []ArgResult
+	args            []string // Can we still implement this?
+	results         map[string]ArgResult
 	rest            []string
 }
 
@@ -104,27 +107,15 @@ pub fn (mut cmd Command) add_command(command Command) {
 	cmd.commands << subcmd
 }
 
-// setup ensures that all sub-commands of this `Command`
-// is linked as a chain.
-pub fn (mut cmd Command) setup() {
-	for flag in cmd.flags {
-		
-	}
-	for mut subcmd in cmd.commands {
-		subcmd.parent = unsafe { cmd }
-		subcmd.setup()
-	}
-}
-
 // add_flags adds the array `flags` to this `Command`.
-pub fn (mut cmd Command) add_flags(flags []Flag) {
+pub fn (mut cmd Command) add_flags(flags []Flag<T>) {
 	for flag in flags {
 		cmd.add_flag(flag)
 	}
 }
 
 // add_flag adds `flag` to this `Command`.
-pub fn (mut cmd Command) add_flag(flag Flag) {
+pub fn (mut cmd Command) add_flag(flag Flag<T>) {
 	if cmd.flags.contains(flag.name) {
 		println('Flag with the name `$flag.name` already exists')
 		exit(1)
@@ -132,195 +123,239 @@ pub fn (mut cmd Command) add_flag(flag Flag) {
 	cmd.flags << flag
 }
 
-// parse parses `args` into this structured `Command`.
-pub fn (mut cmd Command) parse(args []string) {
-	if !cmd.disable_flags {
-		cmd.add_default_flags()
-	}
-	cmd.add_default_commands()
-	if cmd.sort_flags {
-		cmd.flags.sort(a.name < b.name)
-	}
-	if cmd.sort_commands {
-		cmd.commands.sort(a.name < b.name)
-	}
-	cmd.args = args[1..]
-	if !cmd.disable_flags {
-		cmd.parse_flags()
-	}
-	cmd.parse_commands()
-}
+// // parse parses `args` into this structured `Command`.
+// pub fn (mut cmd Command) parse(args []string) {
+// 	if !cmd.disable_flags {
+// 		cmd.add_default_flags()
+// 	}
+// 	cmd.add_default_commands()
+// 	if cmd.sort_flags {
+// 		cmd.flags.sort(a.name < b.name)
+// 	}
+// 	if cmd.sort_commands {
+// 		cmd.commands.sort(a.name < b.name)
+// 	}
+// 	cmd.args = args[1..]
+// 	if !cmd.disable_flags {
+// 		cmd.parse_flags()
+// 	}
+// 	cmd.parse_commands()
+// }
 
-// add_default_flags adds the commonly used `-h`/`--help` and
-// `-v`/`--version` flags to the `Command`.
-fn (mut cmd Command) add_default_flags() {
-	if !cmd.disable_help && !cmd.flags.contains('help') {
-		use_help_abbrev := !cmd.flags.contains('h') && cmd.flags.have_abbrev()
-		cmd.add_flag(help_flag(use_help_abbrev))
-	}
-	if !cmd.disable_version && cmd.version != '' && !cmd.flags.contains('version') {
-		use_version_abbrev := !cmd.flags.contains('v') && cmd.flags.have_abbrev()
-		cmd.add_flag(version_flag(use_version_abbrev))
-	}
-}
+// // add_default_flags adds the commonly used `-h`/`--help` and
+// // `-v`/`--version` flags to the `Command`.
+// fn (mut cmd Command) add_default_flags() {
+// 	if !cmd.disable_help && !cmd.flags.contains('help') {
+// 		use_help_abbrev := !cmd.flags.contains('h') && cmd.flags.have_abbrev()
+// 		cmd.add_flag(help_flag(use_help_abbrev))
+// 	}
+// 	if !cmd.disable_version && cmd.version != '' && !cmd.flags.contains('version') {
+// 		use_version_abbrev := !cmd.flags.contains('v') && cmd.flags.have_abbrev()
+// 		cmd.add_flag(version_flag(use_version_abbrev))
+// 	}
+// }
 
-// add_default_commands adds the command functions of the
-// commonly used `help` and `version` flags to the `Command`.
-fn (mut cmd Command) add_default_commands() {
-	if !cmd.disable_help && !cmd.commands.contains('help') && cmd.is_root() {
-		cmd.add_command(help_cmd())
-	}
-	if !cmd.disable_version && cmd.version != '' && !cmd.commands.contains('version') {
-		cmd.add_command(version_cmd())
-	}
-}
+// // add_default_commands adds the command functions of the
+// // commonly used `help` and `version` flags to the `Command`.
+// fn (mut cmd Command) add_default_commands() {
+// 	if !cmd.disable_help && !cmd.commands.contains('help') && cmd.is_root() {
+// 		cmd.add_command(help_cmd())
+// 	}
+// 	if !cmd.disable_version && cmd.version != '' && !cmd.commands.contains('version') {
+// 		cmd.add_command(version_cmd())
+// 	}
+// }
 
-fn (mut cmd Command) parse_flags() {
-	for {
-		if cmd.args.len < 1 || !cmd.args[0].starts_with('-') {
-			break
-		}
-		mut found := false
-		for i in 0 .. cmd.flags.len {
-			unsafe {
-				mut flag := &cmd.flags[i]
-				if flag.matches(cmd.args, cmd.flags.have_abbrev()) {
-					found = true
-					flag.found = true
-					cmd.args = flag.parse(cmd.args, cmd.flags.have_abbrev()) or {
-						println('Failed to parse flag `${cmd.args[0]}`: $err')
-						exit(1)
-					}
-					break
-				}
-			}
-		}
-		if !found {
-			println('Command `$cmd.name` has no flag `${cmd.args[0]}`')
-			exit(1)
-		}
-	}
-}
+// fn (mut cmd Command) parse_flags() {
+// 	for {
+// 		if cmd.args.len < 1 || !cmd.args[0].starts_with('-') {
+// 			break
+// 		}
+// 		mut found := false
+// 		for i in 0 .. cmd.flags.len {
+// 			unsafe {
+// 				mut flag := &cmd.flags[i]
+// 				if flag.matches(cmd.args, cmd.flags.have_abbrev()) {
+// 					found = true
+// 					flag.found = true
+// 					cmd.args = flag.parse(cmd.args, cmd.flags.have_abbrev()) or {
+// 						println('Failed to parse flag `${cmd.args[0]}`: $err')
+// 						exit(1)
+// 					}
+// 					break
+// 				}
+// 			}
+// 		}
+// 		if !found {
+// 			println('Command `$cmd.name` has no flag `${cmd.args[0]}`')
+// 			exit(1)
+// 		}
+// 	}
+// }
 
-fn (mut cmd Command) parse_commands() {
-	global_flags := cmd.flags.filter(it.global)
-	cmd.check_help_flag()
-	cmd.check_version_flag()
-	for i in 0 .. cmd.args.len {
-		arg := cmd.args[i]
-		for j in 0 .. cmd.commands.len {
-			mut command := cmd.commands[j]
-			if command.name == arg {
-				for flag in global_flags {
-					command.add_flag(flag)
-				}
-				command.parse(cmd.args[i..])
-				return
-			}
-		}
-	}
-	if cmd.is_root() && isnil(cmd.execute) {
-		if !cmd.disable_help {
-			cmd.execute_help()
-			return
-		}
-	}
-	// if no further command was found, execute current command
-	if cmd.required_args > 0 {
-		if cmd.required_args > cmd.args.len {
-			eprintln('Command `$cmd.name` needs at least $cmd.required_args arguments')
-			exit(1)
-		}
-	}
-	cmd.check_required_flags()
-	if !isnil(cmd.pre_execute) {
-		cmd.pre_execute(*cmd) or {
-			eprintln('cli preexecution error: $err')
-			exit(1)
-		}
-	}
-	if !isnil(cmd.execute) {
-		cmd.execute(*cmd) or {
-			eprintln('cli execution error: $err')
-			exit(1)
-		}
-	}
-	if !isnil(cmd.post_execute) {
-		cmd.post_execute(*cmd) or {
-			eprintln('cli postexecution error: $err')
-			exit(1)
-		}
-	}
-}
+// fn (mut cmd Command) parse_commands() {
+// 	global_flags := cmd.flags.filter(it.global)
+// 	cmd.check_help_flag()
+// 	cmd.check_version_flag()
+// 	for i in 0 .. cmd.args.len {
+// 		arg := cmd.args[i]
+// 		for j in 0 .. cmd.commands.len {
+// 			mut command := cmd.commands[j]
+// 			if command.name == arg {
+// 				for flag in global_flags {
+// 					command.add_flag(flag)
+// 				}
+// 				command.parse(cmd.args[i..])
+// 				return
+// 			}
+// 		}
+// 	}
+// 	if cmd.is_root() && isnil(cmd.execute) {
+// 		if !cmd.disable_help {
+// 			cmd.execute_help()
+// 			return
+// 		}
+// 	}
+// 	// if no further command was found, execute current command
+// 	if cmd.required_args > 0 {
+// 		if cmd.required_args > cmd.args.len {
+// 			eprintln('Command `$cmd.name` needs at least $cmd.required_args arguments')
+// 			exit(1)
+// 		}
+// 	}
+// 	cmd.check_required_flags()
+// 	if !isnil(cmd.pre_execute) {
+// 		cmd.pre_execute(*cmd) or {
+// 			eprintln('cli preexecution error: $err')
+// 			exit(1)
+// 		}
+// 	}
+// 	if !isnil(cmd.execute) {
+// 		cmd.execute(*cmd) or {
+// 			eprintln('cli execution error: $err')
+// 			exit(1)
+// 		}
+// 	}
+// 	if !isnil(cmd.post_execute) {
+// 		cmd.post_execute(*cmd) or {
+// 			eprintln('cli postexecution error: $err')
+// 			exit(1)
+// 		}
+// 	}
+// }
 
-fn (cmd Command) check_help_flag() {
-	if !cmd.disable_help && cmd.flags.contains('help') {
-		help_flag := cmd.flags.get_bool('help') or { return } // ignore error and handle command normally
-		if help_flag {
-			cmd.execute_help()
-			exit(0)
-		}
-	}
-}
+// fn (cmd Command) check_help_flag() {
+// 	if !cmd.disable_help && cmd.flags.contains('help') {
+// 		help_flag := cmd.flags.get_bool('help') or { return } // ignore error and handle command normally
+// 		if help_flag {
+// 			cmd.execute_help()
+// 			exit(0)
+// 		}
+// 	}
+// }
 
-fn (cmd Command) check_version_flag() {
-	if !cmd.disable_version && cmd.version != '' && cmd.flags.contains('version') {
-		version_flag := cmd.flags.get_bool('version') or { return } // ignore error and handle command normally
-		if version_flag {
-			version_cmd := cmd.commands.get('version') or { return } // ignore error and handle command normally
-			version_cmd.execute(version_cmd) or { panic(err) }
-			exit(0)
-		}
-	}
-}
+// fn (cmd Command) check_version_flag() {
+// 	if !cmd.disable_version && cmd.version != '' && cmd.flags.contains('version') {
+// 		version_flag := cmd.flags.get_bool('version') or { return } // ignore error and handle command normally
+// 		if version_flag {
+// 			version_cmd := cmd.commands.get('version') or { return } // ignore error and handle command normally
+// 			version_cmd.execute(version_cmd) or { panic(err) }
+// 			exit(0)
+// 		}
+// 	}
+// }
 
-fn (cmd Command) check_required_flags() {
-	for flag in cmd.flags {
-		if flag.required && flag.value.len == 0 {
-			full_name := cmd.full_name()
-			println('Flag `$flag.name` is required by `$full_name`')
-			exit(1)
-		}
-	}
-}
+// fn (cmd Command) check_required_flags() {
+// 	for flag in cmd.flags {
+// 		if flag.required && flag.value.len == 0 {
+// 			full_name := cmd.full_name()
+// 			println('Flag `$flag.name` is required by `$full_name`')
+// 			exit(1)
+// 		}
+// 	}
+// }
 
-// execute_help executes the callback registered
-// for the `-h`/`--help` flag option.
-pub fn (cmd Command) execute_help() {
-	if cmd.commands.contains('help') {
-		help_cmd := cmd.commands.get('help') or { return } // ignore error and handle command normally
-		help_cmd.execute(help_cmd) or { panic(err) }
+// // execute_help executes the callback registered
+// // for the `-h`/`--help` flag option.
+// pub fn (cmd Command) execute_help() {
+// 	if cmd.commands.contains('help') {
+// 		help_cmd := cmd.commands.get('help') or { return } // ignore error and handle command normally
+// 		help_cmd.execute(help_cmd) or { panic(err) }
+// 	} else {
+// 		print(cmd.help_message())
+// 	}
+// }
+
+// fn (cmds []Command) get(name string) ?Command {
+// 	for cmd in cmds {
+// 		if cmd.name == name {
+// 			return cmd
+// 		}
+// 	}
+// 	return error('Command `$name` not found in $cmds')
+// }
+
+// fn (cmds []Command) contains(name string) bool {
+// 	for cmd in cmds {
+// 		if cmd.name == name {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
+
+pub fn (mut cmd Command) run(args []string) ? {
+	cmd.setup() ?
+	if cmd.parse(args) ? {
+		return
 	} else {
-		print(cmd.help_message())
+		cmd.pre_execute() ?
+		cmd.execute() ?
+		cmd.post_execute() ?
 	}
 }
 
-fn (cmds []Command) get(name string) ?Command {
-	for cmd in cmds {
-		if cmd.name == name {
-			return cmd
+fn (mut cmd Command) parse(args []string) ?bool {
+	mut found_subcmd := false
+
+	// Ahhhhh the old-school for loop!
+	for i := 1; i < args.len; i++ {
+		for subcmd in cmd.commands {
+			if args[i] == subcmd.name || (cmd.alias != '' && args[i] == cmd.alias) {
+				subcmd.run(args[i..]) ?
+				return true
+			}
+		}
+
+		mut found_flag := false
+		for flag in cmd.flags {
+			// The `abbrev != ''` is to take the edge case '-' into account
+			if args[i] == '--' + flag.name || (flag.abbrev != '' && args[i] == '-' + flag.abbrev) {
+				cmd.results << ArgResult(flag.parse(args[i + 1]) ?)
+				found_subcmd = true
+				i++
+				break
+			}
 		}
 	}
-	return error('Command `$name` not found in $cmds')
 }
 
-fn (cmds []Command) contains(name string) bool {
-	for cmd in cmds {
-		if cmd.name == name {
-			return true
-		}
-	}
-	return false
-}
-
-pub fn (mut cmd Command) run() ? {
+// setup ensures that all sub-commands of this `Command`
+// is linked as a chain.
+pub fn (mut cmd Command) setup() ? {
 	// Check all flags under the command to make sure that they are using the
 	// allowed types (see `ArgResult`).
-	// For performance reasons, type checking is automatically disabled when 
-	// running in production mode (i.e. --prod).
+	// For performance reasons, this is automatically enabled only in debug
+	// mode (-cg) and testing.
+	// However, type is still checked for each flag that is called.
 	$if !prod {
 		for flag in cmd.flags {
 			flag.verify() ?
 		}
+	}
+
+	for mut subcmd in cmd.commands {
+		subcmd.parent = unsafe { cmd }
+		subcmd.setup()
 	}
 }

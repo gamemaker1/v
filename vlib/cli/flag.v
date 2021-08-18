@@ -10,12 +10,14 @@ pub struct Flag<T> {
 pub mut:
 	// Name of flag
 	name string [required]
-	// Like short option
+	// Like short option, usually 1 letter
 	abbrev string
 	// Desciption of flag
 	description string
+	// Whether this flag's value can be set to false. This will only work for
+	// Flag<bool> and is ignored for all other types of Flag.
 	negatble bool
-	global      bool
+	global   bool
 	// If flag is requierd
 	required bool = false
 	// Default value if no value provide by command line
@@ -331,7 +333,7 @@ pub fn (flag Flag<T>) parse(f string, arg string) ?T {
 
 		return values
 	} $else $if T is []f64 {
-		// I know it's wierd, but I actually can't put these into one $if 
+		// I know it's wierd, but I actually can't put these into one $if
 		// statement. The V compiler will get confused with the return type...
 		// As of 08/16/2021. Perhaps in the future, this will be resolved.
 		mut values := []f64{}
