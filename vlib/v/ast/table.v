@@ -202,7 +202,7 @@ pub fn (t &Table) fn_type_signature(f &Fn) string {
 		typ := arg.typ.set_nr_muls(0)
 		arg_type_sym := t.get_type_symbol(typ)
 		sig += arg_type_sym.str().to_lower().replace_each(['.', '__', '&', '', '[]', 'arr_', 'chan ',
-			'chan_', 'map[', 'map_of_', ']', '_to_', '<', '_T_', ',', '_', '>', ''])
+			'chan_', 'map[', 'map_of_', ']', '_to_', '<', '_T_', ',', '_', ' ', '', '>', ''])
 		if i < f.params.len - 1 {
 			sig += '_'
 		}
@@ -412,8 +412,13 @@ fn (t &Table) register_aggregate_field(mut sym TypeSymbol, name string) ?StructF
 			if !found_once {
 				found_once = true
 				new_field = type_field
-			} else if !new_field.equals(type_field) {
+			} else if new_field.typ != type_field.typ {
 				return error('field `${t.type_to_str(typ)}.$name` type is different')
+			}
+			new_field = StructField{
+				...new_field
+				is_mut: new_field.is_mut && type_field.is_mut
+				is_pub: new_field.is_pub && type_field.is_pub
 			}
 		} else {
 			return error('type `${t.type_to_str(typ)}` has no field or method `$name`')
@@ -1428,7 +1433,7 @@ pub fn (mut t Table) resolve_generic_to_concrete(generic_type Type, generic_name
 						gts := t.get_type_symbol(ct)
 						nrt += gts.name
 						if i != sym.info.generic_types.len - 1 {
-							nrt += ','
+							nrt += ', '
 						}
 					}
 				}

@@ -696,7 +696,7 @@ fn (mut c Checker) unwrap_generic_type(typ ast.Type, generic_names []string, con
 					nrt += gts.name
 					c_nrt += gts.cname
 					if i != ts.info.generic_types.len - 1 {
-						nrt += ','
+						nrt += ', '
 						c_nrt += '_'
 					}
 				}
@@ -3410,8 +3410,8 @@ pub fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 		return ast.void_type
 	}
 	node.expr_type = typ
-	if node.expr_type.has_flag(.optional) && !((node.expr is ast.Ident
-		&& (node.expr as ast.Ident).kind == .constant)) {
+	if node.expr_type.has_flag(.optional) && !(node.expr is ast.Ident
+		&& (node.expr as ast.Ident).kind == .constant) {
 		c.error('cannot access fields of an optional, handle the error with `or {...}` or propagate it with `?`',
 			node.pos)
 	}
@@ -5435,6 +5435,9 @@ pub fn (mut c Checker) expr(node ast.Expr) ast.Type {
 		// return node.typ
 		// }
 		ast.ParExpr {
+			if node.expr is ast.ParExpr {
+				c.warn('redundant parentheses are used', node.pos)
+			}
 			return c.expr(node.expr)
 		}
 		ast.RangeExpr {
@@ -6091,7 +6094,8 @@ pub fn (mut c Checker) match_expr(mut node ast.MatchExpr) ast.Type {
 						}
 						stmt.typ = expr_type
 					} else if node.is_expr && ret_type != expr_type {
-						if !c.check_types(ret_type, expr_type) {
+						if !c.check_types(ret_type, expr_type)
+							&& !c.check_types(expr_type, ret_type) {
 							ret_sym := c.table.get_type_symbol(ret_type)
 							if !(node.is_expr && ret_sym.kind == .sum_type) {
 								c.error('return type mismatch, it should be `$ret_sym.name`',
@@ -7315,7 +7319,7 @@ pub fn (mut c Checker) index_expr(mut node ast.IndexExpr) ast.Type {
 			if node.left.obj is ast.Var {
 				v := node.left.obj as ast.Var
 				// `mut param []T` function parameter
-				is_ok = ((v.is_mut && v.is_arg)) && !typ.deref().is_ptr()
+				is_ok = v.is_mut && v.is_arg && !typ.deref().is_ptr()
 			}
 		}
 		if !is_ok && !c.pref.translated {
